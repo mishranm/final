@@ -1,0 +1,382 @@
+---
+title: "Heroin users comparison to the control group"
+author: "Narad Mishra"
+date: "December 8, 2017"
+output: html_document
+--- 
+
+
+```{r, message=FALSE, warning=FALSE}
+source("https://bioconductor.org/biocLite.R")
+biocLite("clusterProfiler")
+library(clusterProfiler)
+library(Biobase)
+library(limma)
+library(GEOquery)
+library(affy) 
+library(arrayQualityMetrics)
+library(AnnotationDbi)
+library(topGO)
+library(devtools)
+library(sva)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(pander)
+library(scatterplot3d)
+library(KEGGREST)
+library(DT)
+```
+
+## Reading the Data
+# load series and platform data from GEO
+
+```{r}
+mydata<-getGEO('GSE87823', GSEMatrix = TRUE, AnnotGPL = TRUE, destdir = "C:/Users/Narad Mishra/Desktop/project/new")
+mydata<-getGEO(filename = "C:/Users/Narad Mishra/Desktop/project/new/GSE87823_series_matrix.txt.gz", destdir = ".")
+
+edata<-exprs(mydata)      #expression matrix from series data
+pheno<-pData(mydata)      #pheno data 
+#the above phenodata will be used to get information for batch effect.
+```
+
+##Quality Control
+
+```{r}
+library("RColorBrewer")
+usr.col=brewer.pal(9, "Set1")
+mycols=rep(usr.col,each=3)
+boxplot(log2(edata), col=mycols, las=3, cex.axis=0.5, names=colnames(edata))
+hist(log((edata)[,1],2))
+
+#saperately reading in the cel files which contains just the intensities
+# this is done to show the normalization method as the data loaded from getGEO is looks already normalized and summarized.
+files<-list.celfiles() #provided the cel.files are present in working directory
+datDir <- "C:/Users/Narad Mishra/Desktop/project/new"
+files<-list.celfiles(path=datDir) #provided the cel.files are present in working directory
+affy1<-ReadAffy(filenames = files,celfile.path=datDir)
+
+#quality control assessment with intensities distribution
+#distribution of intensities for each sample. 
+
+usr.col=brewer.pal(9, "Set1")
+mycols=rep(usr.col,each=3)
+hist(affy1, lty=rep(1,49), col=mycols)
+legend("topright",rownames(pData(affy1)),lty=rep(1,49), col=mycols, cex=0.6)
+
+#accessing the boxplots
+boxplot(affy1, col=mycols, las=3, cex.axis=0.5, names=colnames(edata))
+hist(log(pm(affy1)[,1],2))   # looks skewed unlike in histogram of edata above
+
+#Quality control if there was any quality issue
+arrayQualityMetrics(mydata, outdir = "mydata.qua", force = TRUE)
+```
+
+
+##Normalization and summarization perfomed with the data from .cel files
+
+```{r}
+eset<-rma(affy1)
+#this performs background correction, quantile normalize, and calculates expression set (summarize using median polish)
+expset<-exprs(eset) #get the expression estimates for each array
+#take a look at few result
+expset[1:5,1:5]
+#accessing the boxplot after normalization. (look the same as the plot for mydata)
+boxplot(expset, col=mycols, las=3, cex.axis=0.5, names=colnames(expset))
+
+
+#summarization of expression matrix
+dim(edata)
+#sample summary
+columnmedian<-apply(edata, 2, median)
+columnmedian
+min(columnmedian)
+#probe summary
+rowmed<-apply(edata,1,median)
+min(rowmed)
+max(rowmed)
+
+```
+
+
+# Looking for batch effect
+
+```{r}
+#pheno<-pData(mydata) has already been assigned earlier
+
+#Applying ComBat method
+
+batch=pheno$source_name_ch1
+modcombat <- model.matrix(~1, data = pheno)
+mod <- model.matrix(~source_name_ch1, data = pheno)
+
+combat_edata <- ComBat(dat = edata, mod = modcombat, batch=batch,par.prior = TRUE, 
+                       prior.plots = FALSE)
+
+combat_fit <- lm.fit(mod, t(combat_edata))
+combat_fit <- lmFit(combat_edata, mod)
+
+#Applying SVA method 
+sva1 <- sva(edata, mod , modcombat, n.sv = 2)
+summary(lm(sva1$sv ~ pheno$source_name_ch1))
+boxplot(sva1$sv[, 2] ~ pheno$source_name_ch1)
+
+modsv <- cbind(mod, sva1$sv)
+fitsv <- lmFit(edata, modsv)
+
+par(mfrow=c(2,1))
+hist(combat_fit$coefficients[, 2], col = 2, breaks = 100) # hisogram applying combat method
+hist(fitsv$coefficients[, 2], col = 2, breaks = 100)
+
+par(mfrow = c(1, 1))
+plot(fitsv$coefficients[, 2], combat_fit$coefficients[, 2], col = 2, xlab = "SVA", 
+     ylab = "Combat", xlim = c(-5, 5), ylim = c(-5, 5))
+abline(c(0, 1), col = 1, lwd = 3)
+```
+
+
+#principal component analysis before batch correction.
+
+```{r}
+options(stringsAsFactors = FALSE)
+
+sourcetype<-pheno$source_name_ch1   # info on whether control or heroin users
+#edata<-exprs(mydata) from above
+pca.data<-edata
+# rename samples
+grps <- c(rep("Cont",27), rep("User",22))
+grpcol <- c(rep("blue",27), rep("red",22))
+colnames(pca.data) <- paste(grps, colnames(pca.data), sep="-")
+ 
+# remove NAs
+pca.data <- na.omit(as.matrix(pca.data))
+ 
+# transpose
+pca.data <- t(pca.data)
+ 
+# inspect pca.data
+dim(pca.data)
+pca.data[1:2,1:2]   #this should show control group as rowname
+pca.data[30:31,1:2] #this should show user group
+ 
+# compute PCA
+pca <- prcomp(pca.data, scale=TRUE)
+ 
+# identify variance in components
+summary(pca)
+ 
+# the first 2 component group 64% of the total variance
+# the first 3 component group 79% of the total variance
+# the first 4 component group 90% of the total variance
+par(mfrow=c(3,1))
+# components #1 and #2
+plot(pca$x[,1], pca$x[,2], xlab="PCA1", ylab="PCA2", main="PCA for components 1&2", type="p", pch=10, col=grpcol)
+
+# show other component pairs for the example
+# components #1 and #3
+plot(pca$x[,1], pca$x[,3], xlab="PCA1", ylab="PCA3", main="PCA for components 1&3", type="p", pch=10, col=grpcol)
+
+# components #2 and #3
+plot(pca$x[,2], pca$x[,3], xlab="PCA2", ylab="PCA3", main="PCA for components 2&3", type="p", pch=10, col=grpcol)
+
+#PCA after batch correction.
+x <- t(combat_edata)
+pcr <- prcomp(x)
+
+plot(pcr$x[,1], pcr$x[,2], xlab="PCA1", ylab="PCA2", main="PCA for components 1&2 after batch correction", type="p", pch=10, col=grpcol)
+
+# show other component pairs for the example
+# components #1 and #3
+plot(pcr$x[,1], pcr$x[,3], xlab="PCA1", ylab="PCA3", main="PCA for components 1&3 after batch correction", type="p", pch=10, col=grpcol)
+
+# components #2 and #3
+plot(pcr$x[,2], pcr$x[,3], xlab="PCA2", ylab="PCA3", main="PCA for components 2&3 after batch correction", type="p", pch=10, col=grpcol)
+```
+
+
+##Clistering
+
+```{r}
+ # Identifying 10% of more variable genes
+funt <- apply(edata, 1, sd)
+cut <- quantile(funt, 0.9)
+list.var <- which(funt > cut)
+
+top10 <- edata[list.var, ]   #before batch correction
+top10combat<- combat_edata[list.var, ] #after batch correction
+
+# average clustering
+hclusbefore <- hclust(dist(top10), method = "average")
+hclusafter <- hclust(dist(top10combat), method = "average")
+
+
+par(mfrow = c(2, 1), mar = c(1, 4, 2, 1))
+plot(hclusbefore, labels = FALSE, hang = -1, main = "before batch effect")
+plot(hclusafter, labels = FALSE, hang = -1, main = "after batch effect")
+
+
+# complete
+hclus.bef <- hclust(dist(top10), method = "complete")
+hclus.aft <- hclust(dist(top10combat), method = "complete")
+
+
+par(mfrow = c(2, 1), mar = c(1, 4, 2, 1))
+plot(hclus.bef, labels = FALSE, hang = -1, main = "before batch effect")
+plot(hclus.aft, labels = FALSE, hang = -1, main = "after batch effect")
+```
+
+
+##filtering applied to the data set
+
+```{r,warning=FALSE, message=FALSE}
+library(hgu133a.db)
+annotation(mydata)<-"hgu133a.db"
+
+f.edata <- nsFilter(mydata, require.entrez = TRUE, require.GOBP = TRUE, 
+    require.GOCC = TRUE, require.GOMF = TRUE, require.CytoBand = FALSE, 
+    remove.dupEntrez = TRUE, var.func = IQR, var.cutoff = 0.5, var.filter = TRUE, 
+    filterByQuantile = TRUE, feature.exclude = "^AFFX")
+
+f.edata$filter.log
+filteredset <- f.edata$eset  # The new ExpressionSet
+```
+
+
+# Differential expression with limma
+
+```{r} 
+# group names for all samples in a series
+#partial code taken from Geo2R
+gsms <- "1111111111111111111111111110000000000000000000000"    # 1 being control and 0 being heroin  users
+sml <- c()
+for (i in 1:nchar(gsms)) { sml[i] <- substr(gsms,i,i) }
+sml <- paste("G", sml, sep="")
+
+# set up the data and proceed with analysis
+sml <- paste("G", sml, sep="")    # set group names
+fl <- as.factor(sml)
+filteredset$description <- fl
+design <- model.matrix(~ description + 0, filteredset)
+colnames(design) <- levels(fl)
+fit <- lmFit(filteredset, design)
+cont.matrix <- makeContrasts(GG1-GG0, levels=design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+fit2 <- eBayes(fit2)
+tT <- topTable(fit2, n=Inf, adjust.method ="fdr", p.value=0.05)
+datatable(tT)
+tT[order(tT$adj.P.Val),]
+top10<-tT[1:10,]
+
+```
+
+```{r}
+vars <- c("ID","adj.P.Val","P.Value","t","logFC","Gene.Symbol","Gene.Title")
+topten<-top10[,colnames(top10) %in% vars]
+
+# Matching the Id with expression matrix
+edata1<-data.frame(edata)
+edata1$probeid<-rownames(edata1)
+top10gene<-semi_join(edata1, topten, by=c("probeid"="ID"))
+rownames(top10gene)<-top10gene$probeid
+top10gene$probeid<-NULL
+
+# Boxplot of ten most differentially expressed gene
+boxplot(top10gene, col=mycols, las=3, cex.axis=0.5, names=colnames(expset))
+```
+
+
+##Gene Enrichment Analysis
+
+
+```{r}
+allgene<-as.list(hgu133aSYMBOL)   ## Get full mapping table for probes to gene names
+
+gene <- unlist(allgene[row.names(tT)])
+gene<-data.frame(gene)
+gene$probeid<-rownames(gene)
+rownames(gene)<-NULL
+
+chrloc <- as.list(hgu133aCHR)
+chrloc <- unlist(chrloc)
+chrloc <- data.frame(chrloc)
+chrloc$Gene_ID <- rownames(chrloc) 
+rownames(chrloc) <- NULL
+chrloc<-chrloc[complete.cases(chrloc),]
+
+names(chrloc)[1] <- "Chromosome"
+chrloc$Chromosome <- as.character(chrloc$Chromosome)
+chrloc2 <- inner_join(chrloc,gene, by=c("Gene_ID"="probeid"))
+chrloc2$Gene_ID <- as.character(chrloc2$Gene_ID)
+
+express.nn <- exprs(filteredset)
+express.nn<-data.frame(express.nn)
+
+express.nn$Gene_names <- rownames(express.nn)
+rownames(express.nn) <- NULL
+express3 <- left_join(express.nn, chrloc, by=c("Gene_names"="Gene_ID"))
+express3$diff_exprs <- ifelse(express3$Gene_names %in% rownames(tT), 1, 0)
+express3$diff_exprs <- factor(express3$diff_exprs, levels = c(1,0))
+
+gene_chr <- data.frame(Gene_names = express3$Gene_names, Chromosome = express3$Chromosome, DiffExp = express3$diff_exprs)
+gene_chr<-gene_chr[complete.cases(gene_chr),]
+head(gene_chr)
+
+mat <- matrix(ncol=length(unique(gene_chr$Chromosome)), nrow=dim(gene_chr)[1])
+chrval <- c(1:22,"X","Y")
+for(i in 1:24){
+	mat[,i] <- ifelse(gene_chr$Chromosome==chrval[i],1,0)
+	}
+chrominfo <- data.frame(mat)
+names(chrominfo) <- paste(rep("chr",24),c(1:22,"X","Y"),sep="")
+chrominfo[] <- lapply(chrominfo, factor, 
+              levels=c(1,0))
+	
+pval <- numeric()
+or <- numeric() 
+for(i in 1:24){
+ft <- fisher.test(table(gene_chr$DiffExp,mat[,i]))
+pval[i] <- ft$p.value
+or[i] <- ft$estimate
+}
+enriched<-which(or>1)
+depleted<-which(or<1)
+
+# Enrichment analysis for Gene Ontology (GO)
+
+sel.fn <- function(p.vals) { p.vals < 0.05 } # Returns a subset of most significant probes
+affyLib <- paste(annotation(filteredset), "db", sep=".")
+p.values <- tT$adj.P.Val
+names(p.values) <- rownames(tT)
+
+GOdata <- new("topGOdata",
+               ontology = "BP", allGenes = p.values, geneSel = sel.fn,
+               nodeSize = 10, # search GO terms with >= 10 genes
+               annot = annFUN.db, affyLib = "hgu133a.db")
+ 
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+resultFisher
+
+showSigOfNodes(GOdata, score(resultFisher), firstSigNodes = 2, useInfo = "all")
+
+# GESA on KEGG pathways
+library(clusterProfiler)
+geneList <- p.values
+probe2entrez <- as.list(hgu133aENTREZID)
+names(geneList) <- unlist(probe2entrez[names(p.values)])
+geneList <- sort(geneList, decreasing = TRUE)
+kk2 <- gseKEGG(geneList     = geneList,
+               organism     = "hsa",
+               nPerm        = 1000,
+               minGSSize    = 10,
+               pvalueCutoff = 1,
+               verbose      = FALSE)
+
+head(kk2@result)
+
+```
+
+
+
+
+
+
