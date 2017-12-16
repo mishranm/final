@@ -39,10 +39,9 @@ library(DT)
 
 ## Result
 
-	The data consist of 49 samples, where 27 of the samples are from control group which are normal Caucasian population and 22 heroin users. The data consisted of 22283 gene sets. The box-plot obtained from the rawdata loaded using *getGEO* looked very much normalized. Histogram of the intensity for a probe plotted also looks normally distributed. Box-plot of the data loaded using *ReadAffy* confirmed that the initially loaded data was normalize. The two plots and the histograms are shown in Figure 1, and Figure 2. Since the data for this study was already normalized, quality evaluation were satisfactory and the data didn't need any cleaning. If the quality check had suggested some cleaning, the *arrayQualityMetrics* function from *Bioconductor* would be used to control for the quality issue. Box-plot of the normalized data, of the data read using *ReadAffy* was almost identical to the boxplot of data read using *getGEO*, which furthur confirms that the data used for this study was already normalize and summarized (fig 3). Batch effect correction methods used in the study seems to remove the batch present, as the accessed box-plots and histogram are very similar between two groups when batch was known (fig 4). The histogram of a probe from batch corrected between SVA and ComBat also looks very similar. And the plot of the coefficients of SVA versus ComBat is linear with the slope of almost 1. Principal Component Analysis performed on both the raw data and the batch corrected data didn't show any difference in distribution among the two components (fig 5). Cluster maps are presented from clustering top 10% of most highly variable genes (fig 6). The filter function was able to filter out 16825 probe ids that didn't have one or more of specified filteration above. Using FDR as the multiple testing adjustment, limma was able to find 379 differentially expressed genes.Fisher test for functional enrichment showed that chromosome 2, 3, 7, 8, 11, 15, 17, 18, 20, 21, 22, and Y were enriched, and chromosome 1,4,5,9,10,12,13,14,16,19, and X are depleted. Gene was called Enriched if odds ratio was greater than 1 and depletd if the odds ratio is less than one. Enrichment analysis performed using Gene Ontology yielded similar results as the fisher test. The output figure for the gene ontology analysis is shown in Figure 7. KEGG pathway analysis gave the description of physiological pathways and some diseases like cancer, Huntington's disease, etc. that the enriched genes are associated with. 
+	The data consist of 49 samples, where 27 of the samples are from control group which are normal Caucasian population and 22 heroin users. The data consisted of 22283 gene sets. The box-plot obtained from the rawdata loaded using *getGEO* looked very much normalized. Histogram of the intensity for a probe plotted also looks normally distributed. Box-plot of the data loaded using *ReadAffy* confirmed that the initially loaded data was normalize. The two plots and the histograms are shown in Figure 1, and Figure 2. Since the data for this study was already normalized, quality evaluation were satisfactory and the data didn't need any cleaning. If the quality check had suggested some cleaning, the *arrayQualityMetrics* function from *Bioconductor* would be used to control for the quality issue. Box-plot of the normalized data, of the data read using *ReadAffy* was almost identical to the boxplot of data read using *getGEO*, which furthur confirms that the data used for this study was already normalize and summarized (fig 3). Batch effect correction methods used in the study seems to remove the batch present, as the accessed box-plots and histogram are very similar between two groups when batch was known (fig 4). The histogram of a probe from batch corrected between SVA and ComBat also looks very similar(fig 5). And the plot of the coefficients of SVA versus ComBat is linear with the slope of almost 1 (fig 6). Principal Component Analysis performed on both the raw data and the batch corrected data didn't show any difference in distribution among the two components (fig 7 and 8). Cluster maps are presented from clustering top 10% of most highly variable genes (fig 9 and 10). The filter function was able to filter out 16825 probe ids that didn't have one or more of specified filteration above. Using FDR as the multiple testing adjustment, limma was able to find 379 differentially expressed genes.Fisher test for functional enrichment showed that chromosome 2, 3, 7, 8, 11, 15, 17, 18, 20, 21, 22, and Y were enriched, and chromosome 1,4,5,9,10,12,13,14,16,19, and X are depleted. Gene was called Enriched if odds ratio was greater than 1 and depletd if the odds ratio is less than one. Enrichment analysis performed using Gene Ontology yielded similar results as the fisher test. The output figure for the gene ontology analysis is shown in Figure 7. KEGG pathway analysis gave the description of physiological pathways and some diseases like cancer, Huntington's disease, etc. that the enriched genes are associated with. 
 	
 	
-Table :1 Top ten differentially expressed genes
 ```{r,warning=FALSE,message=FALSE,echo=FALSE} 
 mydata<-getGEO('GSE87823', GSEMatrix = TRUE, AnnotGPL = TRUE, destdir = "C:/Users/Narad Mishra/Desktop/project/new")
 mydata<-getGEO(filename = "C:/Users/Narad Mishra/Desktop/project/new/GSE87823_series_matrix.txt.gz", destdir = ".")
@@ -79,8 +78,8 @@ cont.matrix <- makeContrasts(GG1-GG0, levels=design)
 fit2 <- contrasts.fit(fit, cont.matrix)
 fit2 <- eBayes(fit2)
 tT <- topTable(fit2, n=Inf, adjust.method ="fdr", p.value=0.05)
-datatable(tT)
-tT[order(tT$adj.P.Val),]
+#datatable(tT)
+tT<-tT[order(tT$adj.P.Val),]
 top10<-tT[1:10,]
 
 ```
@@ -118,8 +117,6 @@ Fig 3:Boxplot of the samples from normalization of the data loaded with ReadAffy
 eset<-rma(affy1)
 #this performs background correction, quantile normalize, and calculates expression set (summarize using median polish)
 expset<-exprs(eset) #get the expression estimates for each array
-#take a look at few result
-expset[1:5,1:5]
 #accessing the boxplot after normalization. (look the same as the plot for mydata)
 boxplot(expset, col=mycols, las=3, cex.axis=0.5, names=colnames(expset))
 
@@ -186,14 +183,12 @@ pca.data <- t(pca.data)
  
 # inspect pca.data
 dim(pca.data)
-pca.data[1:2,1:2]   #this should show control group as rowname
-pca.data[30:31,1:2] #this should show user group
- 
+
 # compute PCA
 pca <- prcomp(pca.data, scale=TRUE)
  
 # identify variance in components
-summary(pca)
+#summary(pca)
  
 # the first 2 component group 64% of the total variance
 # the first 3 component group 79% of the total variance
@@ -212,7 +207,7 @@ plot(pca$x[,2], pca$x[,3], xlab="PCA2", ylab="PCA3", main="PCA for components 2&
 
 Fig 8: Comparison of three components of PCA after batch adjustment
 
-```{r}
+```{r,message=FALSE, warning=FALSE, echo=FALSE}
 
 #PCA after batch correction.
 x <- t(combat_edata)
@@ -230,7 +225,7 @@ plot(pcr$x[,2], pcr$x[,3], xlab="PCA2", ylab="PCA3", main="PCA for components 2&
 
 
 Fig 9: Clustter Pattern before and after adjusting for batch using average linkage.
-```{r}
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
  # Identifying 10% of more variable genes
 funt <- apply(edata, 1, sd)
 cut <- quantile(funt, 0.9)
@@ -263,7 +258,7 @@ plot(hclus.aft, labels = FALSE, hang = -1, main = "after batch effect")
 ```
 
 Fig 11:Box plot of top ten differentially expressed gene
-```{r, echo=FALSE}
+```{r, echo=FALSE, message=FALSE,warning=FALSE}
 gsms <- "1111111111111111111111111110000000000000000000000"    # 1 being control and 0 being heroin users
 sml <- c()
 for (i in 1:nchar(gsms)) { sml[i] <- substr(gsms,i,i) }
@@ -280,13 +275,10 @@ cont.matrix <- makeContrasts(GG1-GG0, levels=design)
 fit2 <- contrasts.fit(fit, cont.matrix)
 fit2 <- eBayes(fit2)
 tT <- topTable(fit2, n=Inf, adjust.method ="fdr", p.value=0.05)
-datatable(tT)
-tT[order(tT$adj.P.Val),]
+#datatable(tT)
+tT<-tT[order(tT$adj.P.Val),]
 top10<-tT[1:10,]
 
-```
-
-```{r}
 vars <- c("ID","adj.P.Val","P.Value","t","logFC","Gene.Symbol","Gene.Title")
 topten<-top10[,colnames(top10) %in% vars]
 
@@ -300,11 +292,10 @@ top10gene$probeid<-NULL
 # Boxplot of ten most differentially expressed gene
 boxplot(top10gene, col=mycols, las=3, cex.axis=0.5, names=colnames(expset))
 ```
-```
 
 
 
-```{r,echo=FALSE}
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
 
 allgene<-as.list(hgu133aSYMBOL)   ## Get full mapping table for probes to gene names
 
@@ -336,7 +327,7 @@ express3$diff_exprs <- factor(express3$diff_exprs, levels = c(1,0))
 
 gene_chr <- data.frame(Gene_names = express3$Gene_names, Chromosome = express3$Chromosome, DiffExp = express3$diff_exprs)
 gene_chr<-gene_chr[complete.cases(gene_chr),]
-head(gene_chr)
+
 
 mat <- matrix(ncol=length(unique(gene_chr$Chromosome)), nrow=dim(gene_chr)[1])
 chrval <- c(1:22,"X","Y")
@@ -372,13 +363,13 @@ GOdata <- new("topGOdata",
                annot = annFUN.db, affyLib = "hgu133a.db")
  
 resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-resultFisher
 
-showSigOfNodes(GOdata, score(resultFisher), firstSigNodes = 2, useInfo = "all")
+
+xx<-showSigOfNodes(GOdata, score(resultFisher), firstSigNodes = 2, useInfo = "all")
 ```
 
 
-## Discussion
+## Discussion 
 
   Heroin overdose or excess use can be detrimental to mental health. In this study, heroin users and control groups microarray data was compared to see if there were any differentially expressed genes. The study was able to find some very specific genes and chromosomes that are differentially expressed. As we saw from different test such as principal component analysis both before and after the batch correction didn't show any divergence between the components, it confirms that the data didn't have any batch to control for. The linear plot of the coefficient of SVA method and ComBat also indicates that there was no any batch, so they both worked to remove the same amount of variation due to batch (unknown). From the the fisher test for functional analysis, it seems like at least one gene from each chromosome are either enriched or depleted. For more accurate inference, this study needs to compare more adjustment method for multiple testing and also look into performing may be somewhat more conservative approaches.
 
